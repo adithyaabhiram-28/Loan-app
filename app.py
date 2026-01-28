@@ -7,7 +7,6 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
 
 # -----------------------------------
 # PAGE CONFIG
@@ -30,20 +29,33 @@ st.markdown(
 )
 
 # -----------------------------------
-# LOAD & PREPROCESS DATA
+# LOAD DATA
 # -----------------------------------
-data = pd.read_csv("loan.csv")
+@st.cache_data
+def load_data():
+    df = pd.read_csv("loan.csv")
+    df.columns = df.columns.str.strip()  # remove hidden spaces
+    return df
 
-# Encode categorical features
-le = LabelEncoder()
-for col in ["Gender", "Married", "Education", "Self_Employed", "Property_Area", "Loan_Status"]:
-    data[col] = le.fit_transform(data[col])
+data = load_data()
 
+# -----------------------------------
+# PREPROCESS DATA
+# -----------------------------------
 data = data.dropna()
 
+# Encode categorical columns safely
+le = LabelEncoder()
+categorical_cols = data.select_dtypes(include=["object"]).columns
+
+for col in categorical_cols:
+    data[col] = le.fit_transform(data[col])
+
+# Separate features and target
 X = data.drop("Loan_Status", axis=1)
 y = data["Loan_Status"]
 
+# Train-test split
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
@@ -52,15 +64,15 @@ X_train, X_test, y_train, y_test = train_test_split(
 # BASE MODELS
 # -----------------------------------
 lr = LogisticRegression(max_iter=1000)
-dt = DecisionTreeClassifier()
-rf = RandomForestClassifier(n_estimators=100)
+dt = DecisionTreeClassifier(random_state=42)
+rf = RandomForestClassifier(n_estimators=100, random_state=42)
 
 lr.fit(X_train, y_train)
 dt.fit(X_train, y_train)
 rf.fit(X_train, y_train)
 
 # -----------------------------------
-# META MODEL (STACKING)
+# STACKING META MODEL
 # -----------------------------------
 train_meta = np.column_stack([
     lr.predict(X_train),
@@ -80,6 +92,7 @@ app_income = st.sidebar.number_input("Applicant Income", min_value=0)
 coapp_income = st.sidebar.number_input("Co-Applicant Income", min_value=0)
 loan_amount = st.sidebar.number_input("Loan Amount", min_value=0)
 loan_term = st.sidebar.number_input("Loan Amount Term", min_value=0)
+
 credit_history = st.sidebar.radio("Credit History", ["Yes", "No"])
 employment = st.sidebar.selectbox("Employment Status", ["Salaried", "Self-Employed"])
 property_area = st.sidebar.selectbox("Property Area", ["Urban", "Semi-Urban", "Rural"])
@@ -92,7 +105,6 @@ property_area = {"Urban": 2, "Semi-Urban": 1, "Rural": 0}[property_area]
 # MODEL ARCHITECTURE DISPLAY
 # -----------------------------------
 st.subheader("🧩 Stacking Model Architecture")
-
 st.markdown("""
 **Base Models Used:**
 - Logistic Regression  
@@ -102,31 +114,44 @@ st.markdown("""
 **Meta Model Used:**
 - Logistic Regression  
 
-📌 *Predictions from base models are combined and passed to the meta-model to make the final decision.*
+📌 Predictions from base models are combined and passed to the meta-model for final decision making.
 """)
 
 # -----------------------------------
-# PREDICTION BUTTON
+# PREDICTION
 # -----------------------------------
 if st.button("🔘 Check Loan Eligibility (Stacking Model)"):
 
-    input_data = np.array([[
-        1, 1, 1, employment, app_income, coapp_income,
-        loan_amount, loan_term, credit_history, property_area
-    ]])
+    # Create input dataframe aligned with training data
+    input_data = pd.DataFrame([{
+        "Gender": 1,
+        "Married": 1,
+        "Dependents": 0,
+        "Education": 1,
+        "Self_Employed": employment,
+        "ApplicantIncome": app_income,
+        "CoapplicantIncome": coapp_income,
+        "LoanAmount": loan_amount,
+        "Loan_Amount_Term": loan_term,
+        "Credit_History": credit_history,
+        "Property_Area": property_area
+    }])
 
-    # Base model predictions
+    # Align input columns exactly with model training columns
+    input_data = input_data[X.columns]
+
+    # Base predictions
     pred_lr = lr.predict(input_data)[0]
     pred_dt = dt.predict(input_data)[0]
     pred_rf = rf.predict(input_data)[0]
 
-    # Meta model prediction
+    # Stacking prediction
     meta_input = np.array([[pred_lr, pred_dt, pred_rf]])
     final_pred = meta_model.predict(meta_input)[0]
     confidence = np.max(meta_model.predict_proba(meta_input)) * 100
 
     # -----------------------------------
-    # OUTPUT SECTION
+    # OUTPUT
     # -----------------------------------
     st.subheader("📊 Prediction Result")
 
@@ -136,14 +161,14 @@ if st.button("🔘 Check Loan Eligibility (Stacking Model)"):
         st.error("❌ Loan Rejected")
 
     st.markdown("### 📊 Base Model Predictions")
-    st.write(f"**Logistic Regression:** {'Approved' if pred_lr == 1 else 'Rejected'}")
-    st.write(f"**Decision Tree:** {'Approved' if pred_dt == 1 else 'Rejected'}")
-    st.write(f"**Random Forest:** {'Approved' if pred_rf == 1 else 'Rejected'}")
+    st.write(f"Logistic Regression → {'Approved' if pred_lr else 'Rejected'}")
+    st.write(f"Decision Tree → {'Approved' if pred_dt else 'Rejected'}")
+    st.write(f"Random Forest → {'Approved' if pred_rf else 'Rejected'}")
 
     st.markdown("### 🧠 Final Stacking Decision")
-    st.write("**Approved**" if final_pred == 1 else "**Rejected**")
+    st.write("**Approved**" if final_pred else "**Rejected**")
 
-    st.markdown(f"### 📈 Confidence Score")
+    st.markdown("### 📈 Confidence Score")
     st.write(f"{confidence:.2f}%")
 
     # -----------------------------------
@@ -153,13 +178,14 @@ if st.button("🔘 Check Loan Eligibility (Stacking Model)"):
 
     if final_pred == 1:
         st.info(
-            "Based on the applicant’s income, credit history, and combined predictions "
-            "from multiple machine learning models, the applicant is likely to repay "
-            "the loan. Therefore, the stacking model predicts **loan approval**."
+            "Based on the applicant’s income, credit history, and the combined "
+            "predictions from multiple machine learning models, the applicant is "
+            "likely to repay the loan. Therefore, the stacking model predicts "
+            "**loan approval**."
         )
     else:
         st.info(
-            "Based on income levels, credit history, and combined model predictions, "
-            "the applicant may face difficulty in repaying the loan. Therefore, "
-            "the stacking model predicts **loan rejection**."
+            "Based on income levels, credit history, and combined predictions from "
+            "multiple models, the applicant may face difficulty in repaying the loan. "
+            "Therefore, the stacking model predicts **loan rejection**."
         )
