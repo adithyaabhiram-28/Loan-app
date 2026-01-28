@@ -17,7 +17,7 @@ st.set_page_config(
 )
 
 # -----------------------------------
-# TITLE
+# TITLE & DESCRIPTION
 # -----------------------------------
 st.title("🎯 Smart Loan Approval System – Stacking Model")
 st.markdown("""
@@ -31,31 +31,24 @@ to predict loan approval by combining multiple models for better decision making
 @st.cache_data
 def load_data():
     df = pd.read_csv("loan.csv")
-    df.columns = df.columns.str.strip().str.lower()
+    df.columns = df.columns.str.strip()  # remove hidden spaces
     return df
 
 data = load_data()
 data = data.dropna()
 
 # -----------------------------------
-# IDENTIFY TARGET COLUMN SAFELY
+# TARGET COLUMN (FIXED)
 # -----------------------------------
-possible_targets = [
-    "loan_status", "loanstatus", "status", "target", "approved"
-]
+TARGET_COLUMN = "Loan_Approval"
 
-target_col = None
-for col in data.columns:
-    if col in possible_targets:
-        target_col = col
-        break
-
-if target_col is None:
-    st.error("❌ Target column not found in dataset.")
+if TARGET_COLUMN not in data.columns:
+    st.error(f"❌ Target column '{TARGET_COLUMN}' not found in dataset.")
+    st.write("Available columns:", data.columns.tolist())
     st.stop()
 
 # -----------------------------------
-# ENCODING
+# ENCODE CATEGORICAL COLUMNS
 # -----------------------------------
 le = LabelEncoder()
 categorical_cols = data.select_dtypes(include=["object"]).columns
@@ -66,11 +59,11 @@ for col in categorical_cols:
 # -----------------------------------
 # FEATURES & LABEL
 # -----------------------------------
-X = data.drop(target_col, axis=1)
-y = data[target_col]
+X = data.drop(TARGET_COLUMN, axis=1)
+y = data[TARGET_COLUMN]
 
 # -----------------------------------
-# TRAIN TEST SPLIT
+# TRAIN–TEST SPLIT
 # -----------------------------------
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
@@ -100,30 +93,33 @@ meta_model = LogisticRegression()
 meta_model.fit(train_meta, y_train)
 
 # -----------------------------------
-# SIDEBAR INPUTS
+# SIDEBAR INPUTS (AUTO-GENERATED)
 # -----------------------------------
 st.sidebar.header("📥 Applicant Details")
 
-user_inputs = {}
+user_input = {}
 for col in X.columns:
-    user_inputs[col] = st.sidebar.number_input(col.replace("_", " ").title(), min_value=0.0)
+    user_input[col] = st.sidebar.number_input(
+        col.replace("_", " ").title(),
+        min_value=0.0
+    )
 
-input_df = pd.DataFrame([user_inputs])
+input_df = pd.DataFrame([user_input])
 
 # -----------------------------------
-# MODEL ARCHITECTURE
+# MODEL ARCHITECTURE DISPLAY
 # -----------------------------------
 st.subheader("🧩 Stacking Model Architecture")
 st.markdown("""
-**Base Models Used**
+**Base Models Used:**
 - Logistic Regression  
 - Decision Tree  
 - Random Forest  
 
-**Meta Model**
+**Meta Model Used:**
 - Logistic Regression  
 
-📌 Base model predictions are used as inputs to the meta-model.
+📌 Predictions from base models are combined and passed to the meta-model to make the final decision.
 """)
 
 # -----------------------------------
@@ -161,19 +157,20 @@ if st.button("🔘 Check Loan Eligibility (Stacking Model)"):
     st.write(f"{confidence:.2f}%")
 
     # -----------------------------------
-    # BUSINESS EXPLANATION (MANDATORY)
+    # BUSINESS EXPLANATION (MANDATORY ⭐)
     # -----------------------------------
     st.subheader("💼 Business Explanation")
 
     if final_pred == 1:
         st.info(
-            "Based on the applicant’s financial details and the combined predictions "
-            "from multiple machine learning models, the applicant is likely to repay "
-            "the loan. Therefore, the stacking model predicts **loan approval**."
+            "Based on the applicant’s financial information and the combined "
+            "predictions from multiple machine learning models, the applicant "
+            "is likely to repay the loan. Therefore, the stacking model predicts "
+            "**loan approval**."
         )
     else:
         st.info(
-            "Based on income-related factors and combined model predictions, the "
-            "applicant may face difficulty in loan repayment. Therefore, the stacking "
-            "model predicts **loan rejection**."
+            "Based on income-related factors and combined predictions from multiple "
+            "models, the applicant may face difficulty in repaying the loan. "
+            "Therefore, the stacking model predicts **loan rejection**."
         )
