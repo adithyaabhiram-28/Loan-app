@@ -23,14 +23,14 @@ to predict loan approval by combining multiple models.
 """)
 
 # -----------------------------------
-# LOAD DATA (AUTO-DETECT SEPARATOR)
+# LOAD DATA (AUTO-SEPARATOR SAFE)
 # -----------------------------------
 @st.cache_data
 def load_data():
     try:
-        df = pd.read_csv("loan.csv")          # try comma
+        df = pd.read_csv("loan.csv")
         if len(df.columns) == 1:
-            df = pd.read_csv("loan.csv", sep="\t")  # fallback to tab
+            df = pd.read_csv("loan.csv", sep="\t")
     except Exception:
         df = pd.read_csv("loan.csv", sep="\t")
 
@@ -40,12 +40,7 @@ def load_data():
 data = load_data()
 
 # -----------------------------------
-# SHOW COLUMNS (DEBUG – SAFE TO KEEP)
-# -----------------------------------
-st.write("📄 Dataset Columns:", data.columns.tolist())
-
-# -----------------------------------
-# VALIDATE REQUIRED COLUMNS
+# REQUIRED COLUMN CHECK
 # -----------------------------------
 required_columns = [
     "Loan_ID", "Gender", "Married", "Dependents", "Education",
@@ -56,7 +51,7 @@ required_columns = [
 
 missing = [c for c in required_columns if c not in data.columns]
 if missing:
-    st.error(f"❌ Missing columns in dataset: {missing}")
+    st.error("❌ Dataset format is incorrect. Required columns are missing.")
     st.stop()
 
 # -----------------------------------
@@ -77,8 +72,10 @@ data.drop("Loan_ID", axis=1, inplace=True)
 # ENCODE CATEGORICAL FEATURES
 # -----------------------------------
 le = LabelEncoder()
-for col in ["Gender", "Married", "Dependents", "Education",
-            "Self_Employed", "Property_Area", "Loan_Status"]:
+for col in [
+    "Gender", "Married", "Dependents", "Education",
+    "Self_Employed", "Property_Area", "Loan_Status"
+]:
     data[col] = le.fit_transform(data[col])
 
 # -----------------------------------
@@ -135,6 +132,9 @@ loan_amount = st.sidebar.number_input("Loan Amount", min_value=0)
 loan_term = st.sidebar.number_input("Loan Amount Term", value=360)
 credit_history = st.sidebar.radio("Credit History", ["Yes", "No"])
 
+# -----------------------------------
+# USER INPUT DATAFRAME
+# -----------------------------------
 input_data = pd.DataFrame([{
     "Gender": 1 if gender == "Male" else 0,
     "Married": 1 if married == "Yes" else 0,
@@ -160,7 +160,9 @@ st.markdown("""
 - Random Forest  
 
 **Meta Model Used**
-- Logistic Regression
+- Logistic Regression  
+
+📌 Base model predictions are used as inputs to the meta-model.
 """)
 
 # -----------------------------------
@@ -197,13 +199,14 @@ if st.button("🔘 Check Loan Eligibility (Stacking Model)"):
     st.subheader("💼 Business Explanation")
     if final_pred == 1:
         st.info(
-            "Based on income, credit history, and combined predictions from multiple "
-            "models, the applicant is likely to repay the loan. Therefore, the stacking "
-            "model predicts loan approval."
+            "Based on the applicant’s income, credit history, and the combined "
+            "predictions from multiple machine learning models, the applicant is "
+            "likely to repay the loan. Therefore, the stacking model predicts "
+            "loan approval."
         )
     else:
         st.info(
-            "Based on income level, credit history, and combined model predictions, "
-            "the applicant may face difficulty in repayment. Therefore, the stacking "
-            "model predicts loan rejection."
+            "Based on income level, credit history, and combined predictions from "
+            "multiple models, the applicant may face difficulty in repayment. "
+            "Therefore, the stacking model predicts loan rejection."
         )
