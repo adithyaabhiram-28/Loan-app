@@ -30,37 +30,41 @@ to predict loan approval by combining multiple models for better decision making
 # -----------------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("loan.csv")
-    df.columns = df.columns.str.strip()  # remove hidden spaces
+    df = pd.read_csv("loan.csv", sep="\t")
+    df.columns = df.columns.str.strip()
     return df
 
 data = load_data()
-data = data.dropna()
 
 # -----------------------------------
-# TARGET COLUMN (FIXED)
+# HANDLE MISSING VALUES
 # -----------------------------------
-TARGET_COLUMN = "Loan_Approval"
-
-if TARGET_COLUMN not in data.columns:
-    st.error(f"❌ Target column '{TARGET_COLUMN}' not found in dataset.")
-    st.write("Available columns:", data.columns.tolist())
-    st.stop()
+data["LoanAmount"].fillna(data["LoanAmount"].median(), inplace=True)
+data["Loan_Amount_Term"].fillna(data["Loan_Amount_Term"].median(), inplace=True)
+data["Credit_History"].fillna(1, inplace=True)
 
 # -----------------------------------
-# ENCODE CATEGORICAL COLUMNS
+# DROP ID COLUMN
+# -----------------------------------
+data.drop("Loan_ID", axis=1, inplace=True)
+
+# -----------------------------------
+# ENCODE CATEGORICAL FEATURES
 # -----------------------------------
 le = LabelEncoder()
-categorical_cols = data.select_dtypes(include=["object"]).columns
+categorical_cols = [
+    "Gender", "Married", "Dependents", "Education",
+    "Self_Employed", "Property_Area", "Loan_Status"
+]
 
 for col in categorical_cols:
     data[col] = le.fit_transform(data[col])
 
 # -----------------------------------
-# FEATURES & LABEL
+# FEATURES & TARGET
 # -----------------------------------
-X = data.drop(TARGET_COLUMN, axis=1)
-y = data[TARGET_COLUMN]
+X = data.drop("Loan_Status", axis=1)
+y = data["Loan_Status"]
 
 # -----------------------------------
 # TRAIN–TEST SPLIT
@@ -93,33 +97,52 @@ meta_model = LogisticRegression()
 meta_model.fit(train_meta, y_train)
 
 # -----------------------------------
-# SIDEBAR INPUTS (AUTO-GENERATED)
+# SIDEBAR INPUTS
 # -----------------------------------
 st.sidebar.header("📥 Applicant Details")
 
-user_input = {}
-for col in X.columns:
-    user_input[col] = st.sidebar.number_input(
-        col.replace("_", " ").title(),
-        min_value=0.0
-    )
+gender = st.sidebar.selectbox("Gender", ["Male", "Female"])
+married = st.sidebar.selectbox("Married", ["Yes", "No"])
+dependents = st.sidebar.selectbox("Dependents", ["0", "1", "2", "3+"])
+education = st.sidebar.selectbox("Education", ["Graduate", "Not Graduate"])
+self_employed = st.sidebar.selectbox("Self Employed", ["Yes", "No"])
+property_area = st.sidebar.selectbox("Property Area", ["Urban", "Semiurban", "Rural"])
 
-input_df = pd.DataFrame([user_input])
+app_income = st.sidebar.number_input("Applicant Income", min_value=0)
+coapp_income = st.sidebar.number_input("Co-Applicant Income", min_value=0)
+loan_amount = st.sidebar.number_input("Loan Amount", min_value=0)
+loan_term = st.sidebar.number_input("Loan Amount Term", value=360)
+credit_history = st.sidebar.radio("Credit History", ["Yes", "No"])
+
+# Encode inputs
+input_data = pd.DataFrame([{
+    "Gender": 1 if gender == "Male" else 0,
+    "Married": 1 if married == "Yes" else 0,
+    "Dependents": 3 if dependents == "3+" else int(dependents),
+    "Education": 1 if education == "Graduate" else 0,
+    "Self_Employed": 1 if self_employed == "Yes" else 0,
+    "ApplicantIncome": app_income,
+    "CoapplicantIncome": coapp_income,
+    "LoanAmount": loan_amount,
+    "Loan_Amount_Term": loan_term,
+    "Credit_History": 1 if credit_history == "Yes" else 0,
+    "Property_Area": {"Urban": 2, "Semiurban": 1, "Rural": 0}[property_area]
+}])
 
 # -----------------------------------
 # MODEL ARCHITECTURE DISPLAY
 # -----------------------------------
 st.subheader("🧩 Stacking Model Architecture")
 st.markdown("""
-**Base Models Used:**
+**Base Models Used**
 - Logistic Regression  
 - Decision Tree  
 - Random Forest  
 
-**Meta Model Used:**
+**Meta Model Used**
 - Logistic Regression  
 
-📌 Predictions from base models are combined and passed to the meta-model to make the final decision.
+📌 Predictions from base models are combined and passed to the meta-model.
 """)
 
 # -----------------------------------
@@ -127,9 +150,9 @@ st.markdown("""
 # -----------------------------------
 if st.button("🔘 Check Loan Eligibility (Stacking Model)"):
 
-    pred_lr = lr.predict(input_df)[0]
-    pred_dt = dt.predict(input_df)[0]
-    pred_rf = rf.predict(input_df)[0]
+    pred_lr = lr.predict(input_data)[0]
+    pred_dt = dt.predict(input_data)[0]
+    pred_rf = rf.predict(input_data)[0]
 
     meta_input = np.array([[pred_lr, pred_dt, pred_rf]])
     final_pred = meta_model.predict(meta_input)[0]
@@ -163,14 +186,14 @@ if st.button("🔘 Check Loan Eligibility (Stacking Model)"):
 
     if final_pred == 1:
         st.info(
-            "Based on the applicant’s financial information and the combined "
-            "predictions from multiple machine learning models, the applicant "
-            "is likely to repay the loan. Therefore, the stacking model predicts "
+            "Based on the applicant’s income, credit history, and the combined "
+            "predictions from multiple machine learning models, the applicant is "
+            "likely to repay the loan. Therefore, the stacking model predicts "
             "**loan approval**."
         )
     else:
         st.info(
-            "Based on income-related factors and combined predictions from multiple "
-            "models, the applicant may face difficulty in repaying the loan. "
-            "Therefore, the stacking model predicts **loan rejection**."
+            "Based on income level, credit history, and combined model predictions, "
+            "the applicant may face difficulty in repaying the loan. Therefore, "
+            "the stacking model predicts **loan rejection**."
         )
